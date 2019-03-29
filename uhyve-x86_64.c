@@ -53,6 +53,8 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/eventfd.h>
+#include <dirent.h>
+#include <linux/limits.h>
 #include <linux/const.h>
 #include <linux/kvm.h>
 #ifdef HAVE_MSR_INDEX_H
@@ -720,9 +722,101 @@ void determine_dirty_pages(void (*save_page_handler)(void*, size_t, void*, size_
 
 }
 
+static int write_fdinfo()
+{
+    // Scans all open file descriptors of the process by reading procfs.
+    // Writes regular open file's path, mode, offset.
+    
+    const char procfs[] = "/proc/self/fd/";
+    char fdprocpath[PATH_MAX];    // path for file's fd entry in procfs
+    char fabspath[PATH_MAX] = ""; // absolute path of file
+    char fname[PATH_MAX];         // dumping file
+    DIR*           dir;
+    FILE*          fs; 
+    struct dirent* dp;
+    struct stat    fstatbuf; 
+    int            ret = 0;
+    int            nofd, mode;
+    off_t          offset;
+
+    // Open /proc/self/fd/
+    if ((dir = opendir(procfs)) == NULL) {
+        perror( "Cannot read fd's list from procfs" );
+        ret = -1; 
+        goto out0; 
+    }
+    
+    // Open file for dumping fds info
+    snprintf( fname, PATH_MAX, "checkpoint/chk%u_fdinfo.txt", 
+              no_checkpoint );
+    if ((fs = fopen( fname, "w" )) == NULL) {
+        perror( "Unable to open file" );
+        ret = -1;
+        goto out0;
+    }
+        
+    // Read the content of /proc/self/fd dir to get the fds
+    while ((dp = readdir(dir)) != NULL) {
+        
+        // get the fd number 
+        nofd = atoi(dp->d_name);
+
+        // avoid the dumping file which was opened last
+        if (nofd == fileno(fs)) break; 
+
+        // read the link of the fd to a file
+        snprintf( fdprocpath, PATH_MAX, "/proc/self/fd/%d", nofd );
+       
+        // clean fabspath from previous entry since readlink does not
+        // append '/0'. For the first time is initialized otherwise we
+        // might get random chars for the first link that we read.
+        memset( fabspath, 0, strlen(fabspath) );
+
+        if (readlink( fdprocpath, fabspath, PATH_MAX ) == -1) {
+            perror( "Error reading symlink from procfs" );
+            ret = -1;
+            goto out1;
+        }
+        
+        // fstat the file
+        if (fstat( nofd, &fstatbuf ) != 0) {
+            perror( "Cannot fstat file" ); 
+            ret = -1;
+            goto out1;
+        }     
+       
+        // for regular files only read mode and offset 
+        if (S_ISREG(fstatbuf.st_mode)) {
+
+            mode = fcntl( nofd, F_GETFL );
+            
+            if((offset = lseek( nofd, 0, SEEK_CUR )) == -1) {
+                perror( "Error reading file's offset" );
+                ret = -1;
+                goto out1;
+            }
+
+            // print fabspath, mode, offset
+            fprintf( fs, "file: %s\nmode: %d\noffset: %d\n",
+                     fabspath, mode, offset);
+        } 
+        
+        // TODO: Check if we also have to deal with sockets?
+    }
+    
+out1:
+
+    fclose(fs);
+    
+out0:
+
+    closedir(dir);
+    
+    return ret;
+}
+
 void timer_handler(int signum)
 {
-
 	struct stat st = {0};
 	char fname[MAX_FNAME];
 	struct timeval begin, end;
@@ -764,6 +858,12 @@ void timer_handler(int signum)
 	determine_dirty_pages(write_mem_page_to_chk_file);
 #endif
 	close_chk_file();
+
+    if (write_fdinfo() != 0) {
+        fprintf( stderr, "Checkpoint %u: errors while dumping "
+                 "open files info\n", no_checkpoint );
+    }
+
 	pthread_barrier_wait(&barrier);
 
 	// update configuration file
