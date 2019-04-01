@@ -797,7 +797,7 @@ static int write_fdinfo()
             }
 
             // print fabspath, mode, offset
-            fprintf( fs, "file: %s\nmode: %d\noffset: %d\n",
+            fprintf( fs, "file:%s\nmode:%d\noffset:%d\n",
                      fabspath, mode, offset);
         } 
         
@@ -1000,6 +1000,131 @@ int load_migration_data(uint8_t* mem)
 	}
 }
 
+int get_keyvalue_value( char** value, char* line, 
+        char fname[PATH_MAX] )
+{
+    // Reads key and value from null terminated string with delimiter 
+    // ':' and newline in the form "key:value\n". Stores the value as
+    // string in `value` argument. In case of failure returns -1 
+    // otherwise 0.
+
+    // read the key
+    if (strtok( line, ":" ) == NULL) {
+        fprintf( stderr, "Could not read token from checkpoint file %s\n", 
+                 fname );
+        return -1; 
+    }
+
+    // read the value
+    if ((*value = strtok( NULL, "\n" )) == NULL) {
+        fprintf( stderr, "Could not read value from checkpoint file %s\n", 
+                 fname );
+        return -1; 
+    }
+
+    return 0;
+}
+
+int read_fdinfo( FILE* fs, char fname[PATH_MAX], 
+        char fpath[PATH_MAX], int* mode, off_t* offset )
+{
+    // Reads file descriptors info from checkpoint files. Each fd is
+    // represented with 3 lines for absolute path, mode and offset. For
+    // each line the entries are read with get_keyvalue_value(). In case
+    // of failure returns -1, if one fd entry is read returns 1
+    // otherwise returns 0.
+    
+    char* line = NULL;
+    char* value = NULL;
+    size_t len = 0;
+    ssize_t nreadl;
+    
+    // read file's path
+    if ((nreadl = getline( &line, &len, fs )) == -1) goto noentry;
+    if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
+    snprintf( fpath, PATH_MAX, value );
+
+    // read mode
+    if ((nreadl = getline( &line, &len, fs )) == -1) goto corrupt;
+    if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
+    *mode = atoi(value);
+
+    // read offset
+    if ((nreadl = getline( &line, &len, fs )) == -1) goto corrupt;
+    if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
+    *offset = atoi(value);
+
+    free(line); 
+    
+    return 1;
+
+noentry:
+    
+    return 0;
+
+corrupt:
+
+    fprintf( stderr, "Could not read line: %s seems corrupted\n", fname );
+
+fail:
+ 
+    free(line); 
+    
+    return -1;
+}
+
+int restore_file_descriptors()
+{
+    // Restores the open file descriptors by reading the checkpoint
+    // fdinfo files and opening the files with the right absolut path,
+    // mode and offset. In case of failure returns -1 otherwise 0.
+    
+    FILE* fs = NULL; 
+    char fname[PATH_MAX];   // dumping file
+    char fpath[PATH_MAX];   // file to be restored
+    off_t offset;
+    int mode;
+    int fdi;    // file description info
+    int rfd;    // restored file descriptor
+    int ret = 0;
+
+    snprintf( fname, PATH_MAX, "checkpoint/chk%u_fdinfo.txt", 
+              no_checkpoint );
+    if ((fs = fopen( fname, "r" )) == NULL) {
+        perror( "Unable to open file" );
+        ret = -1;
+        goto out;
+    }
+
+    while (fdi = read_fdinfo( fs, fname, fpath, &mode, &offset )) {
+        
+        // try to open the file with certain mode
+        if ((rfd = open( fpath, mode )) == -1) {
+            fprintf( stderr, "Unable to restore %s\n", fpath );
+            perror("open");
+            ret = -1;
+            goto out;
+        }
+
+        // try to set file's offset
+        if (lseek( rfd, offset, SEEK_SET ) == -1) {
+            fprintf( stderr, "Unable to set offset at %s\n", fpath );
+            perror("lseek");
+            ret -1;
+            goto out;
+        }
+    }    
+
+    // in case of read_fdinfo() failure
+    if (fdi == -1) ret = -1;
+
+out:
+
+    fclose(fs);
+    
+    return ret;
+}
+
 int load_checkpoint(uint8_t* mem, char* path)
 {
 	char fname[MAX_FNAME];
@@ -1078,6 +1203,10 @@ int load_checkpoint(uint8_t* mem, char* path)
 
 		fclose(f);
 	}
+
+    if (restore_file_descriptors() != 0) {
+        fputs( "Could NOT restore all file descriptors\n", stderr ); 
+    }
 
 	if (verbose) {
 		gettimeofday(&end, NULL);
