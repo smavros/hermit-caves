@@ -30,6 +30,7 @@
 
 #include <err.h>
 #include <linux/kvm.h>
+#include <linux/limits.h>
 
 #define UHYVE_PORT_WRITE		0x400
 #define UHYVE_PORT_OPEN			0x440
@@ -52,6 +53,8 @@
 #define UHYVE_UART_PORT			0x800
 
 #define UHYVE_IRQ       11
+
+#define UHYVE_MAX_FILES 1024  // XXX: Or 1024 - 6 (std streams) = 1018
 
 #define SIGTHRCHKP 	(SIGRTMIN+0)
 #define SIGTHRMIG 	(SIGRTMIN+1)
@@ -86,6 +89,15 @@ typedef struct _vcpu_state {
 	int dummy;
 } vcpu_state_t;
 #endif
+
+typedef struct fd_info fd_info_t;
+
+struct fd_info {
+    char path[PATH_MAX];
+    int mode;
+    off_t offset;
+    fd_info_t *next;
+};
 
 typedef struct _migration_metadata migration_metadata_t;
 

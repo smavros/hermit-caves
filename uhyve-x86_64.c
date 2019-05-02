@@ -54,7 +54,6 @@
 #include <sys/time.h>
 #include <sys/eventfd.h>
 #include <dirent.h>
-#include <linux/limits.h>
 #include <linux/const.h>
 #include <linux/kvm.h>
 #ifdef HAVE_MSR_INDEX_H
