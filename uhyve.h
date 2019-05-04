@@ -31,6 +31,7 @@
 #include <err.h>
 #include <linux/kvm.h>
 #include <linux/limits.h>
+#include <sys/queue.h>
 
 #define UHYVE_PORT_WRITE		0x400
 #define UHYVE_PORT_OPEN			0x440
@@ -90,16 +91,22 @@ typedef struct _vcpu_state {
 } vcpu_state_t;
 #endif
 
-typedef struct fd_info fd_info_t;
+typedef struct fd_entry fd_entry_t;
 
-struct fd_info {
+struct fd_entry {
     char path[PATH_MAX];
     int mode;
     off_t offset;
-    fd_info_t *next;
+    SLIST_ENTRY(fd_entry) nextfd; 
 };
 
+// Typedef the macro defined struct to avoid re-declaration of anonymous
+// struct that will lead to -Wincopatible-pointer-types
+typedef SLIST_HEAD( fd_info_head, fd_info_entry ) fd_list_t;
+
 typedef struct _migration_metadata migration_metadata_t;
+
+extern fd_list_t* fd_list;
 
 void print_registers(void);
 void timer_handler(int signum);

@@ -96,6 +96,7 @@ __thread struct kvm_run *run = NULL;
 __thread int vcpufd = -1;
 __thread uint32_t cpuid = 0;
 static sem_t net_sem;
+fd_list_t *fd_list = NULL;
 
 int uhyve_argc = -1;
 int uhyve_envc = -1;

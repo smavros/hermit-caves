@@ -51,7 +51,6 @@
 
 #include "uhyve.h"
 #include "uhyve-gdb.h"
-#include "queue.h"
 
 /* This is the trap instruction used for software breakpoints. */
 #ifdef __aarch64__
