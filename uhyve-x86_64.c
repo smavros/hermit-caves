@@ -833,6 +833,8 @@ static int write_fdinfo()
                 fdentp->path, fdentp->mode, fdentp->offset );
     }
 
+    fclose(fs);
+
     return 0;
 }
 
