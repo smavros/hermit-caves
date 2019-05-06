@@ -119,6 +119,32 @@ typedef struct {
 	char **envp;
 } __attribute__ ((packed)) uhyve_cmdval_t;
 
+static inline void init_fdinfo()
+{
+    // Initialize the linked list for the fd info in any case. We might
+    // start with/out checkpointing but if we are starting from previous
+    // checkpoint the fd_list must exist. A call to clean_fdinfo() is
+    // valid even for empty list.
+    fd_list = calloc( 1, sizeof( fd_list_t ) );
+    fd_list->slh_first = NULL;
+}
+
+void clean_fdinfo()
+{
+    fd_entry_t* ent;
+    while (!SLIST_EMPTY( fd_list )) {
+        ent = SLIST_FIRST( fd_list );
+        SLIST_REMOVE_HEAD( fd_list, nextfd );
+        free( ent );
+    }
+}
+
+static inline void free_fdinfo()
+{
+    // Free the fd_list_t that was heap allocated by init_fdinfo()
+    free( fd_list );
+}
+
 static inline size_t min(const size_t a, const size_t b)
 {
 	return (a < b ? a : b);
@@ -215,6 +241,10 @@ static void uhyve_atexit(void)
 	// clean up and close KVM
 	close_fd(&vmfd);
 	close_fd(&kvm);
+    
+    // Empty and free list of file descriptors info
+    clean_fdinfo();
+    free_fdinfo();
 }
 
 static void* wait_for_packet(void* arg)
@@ -784,6 +814,10 @@ int uhyve_loop(int argc, char **argv)
 
 	if (hermit_check)
 		ts = atoi(hermit_check);
+	
+	// Initialize fd info linked list in any case since we might start
+	// from a checkpointed process
+    init_fdinfo();  
 
 	if (hermit_mig_support) {
 		set_migration_target(hermit_mig_support, MIGRATION_PORT);

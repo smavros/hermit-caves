@@ -721,7 +721,7 @@ void determine_dirty_pages(void (*save_page_handler)(void*, size_t, void*, size_
 
 }
 
-static int write_fdinfo()
+static int get_fdinfo()
 {
     // Scans all open file descriptors of the process by reading procfs.
     // Writes regular open file's path, mode, offset.
@@ -729,14 +729,13 @@ static int write_fdinfo()
     const char procfs[] = "/proc/self/fd/";
     char fdprocpath[PATH_MAX];    // path for file's fd entry in procfs
     char fabspath[PATH_MAX] = ""; // absolute path of file
-    char fname[PATH_MAX];         // dumping file
-    DIR*           dir;
-    FILE*          fs; 
-    struct dirent* dp;
-    struct stat    fstatbuf; 
-    int            ret = 0;
-    int            nofd, mode;
-    off_t          offset;
+    DIR* dir = NULL;
+    struct dirent* dp = NULL;
+    struct stat fstatbuf; 
+    int ret = 0;
+    int nofd, mode;
+    off_t offset;
+    fd_entry_t* fdentp = NULL;
 
     // Open /proc/self/fd/
     if ((dir = opendir(procfs)) == NULL) {
@@ -744,24 +743,12 @@ static int write_fdinfo()
         ret = -1; 
         goto out0; 
     }
-    
-    // Open file for dumping fds info
-    snprintf( fname, PATH_MAX, "checkpoint/chk%u_fdinfo.txt", 
-              no_checkpoint );
-    if ((fs = fopen( fname, "w" )) == NULL) {
-        perror( "Unable to open file" );
-        ret = -1;
-        goto out0;
-    }
         
     // Read the content of /proc/self/fd dir to get the fds
     while ((dp = readdir(dir)) != NULL) {
         
         // get the fd number 
         nofd = atoi(dp->d_name);
-
-        // avoid the dumping file which was opened last
-        if (nofd == fileno(fs)) break; 
 
         // read the link of the fd to a file
         snprintf( fdprocpath, PATH_MAX, "/proc/self/fd/%d", nofd );
@@ -795,23 +782,55 @@ static int write_fdinfo()
                 goto out1;
             }
 
-            // print fabspath, mode, offset
-            fprintf( fs, "file:%s\nmode:%d\noffset:%d\n",
-                     fabspath, mode, offset);
+            // Allocate next fd entry 
+            if((fdentp = calloc( 1, sizeof( fd_entry_t ))) == NULL) {
+                fprintf( stderr, "No memory for fdentp" );
+                ret = -1;
+                goto out1; 
+            }
+            
+            // Insert file's path, mode and offset in fdinfo list
+            snprintf( fdentp->path, PATH_MAX, fabspath );
+            fdentp->mode = mode;
+            fdentp->offset = offset;
+            SLIST_INSERT_HEAD( fd_list, fdentp, nextfd );
         } 
-        
         // TODO: Check if we also have to deal with sockets?
     }
-    
+
 out1:
-
-    fclose(fs);
     
-out0:
+    closedir(dir); // TODO: check for return error!
 
-    closedir(dir);
+out0:
     
     return ret;
+}
+
+static int write_fdinfo()
+{
+    // Traverses the singly-linked list fd_list and appends the file
+    // descriptor's entry info in the file fname. On success return 0 on
+    // failure -1
+
+    char fname[PATH_MAX]; // checkpoint's file
+    FILE* fs; 
+    fd_entry_t* fdentp; 
+
+    // Open file for dumping fds info
+    snprintf( fname, PATH_MAX, "checkpoint/chk%u_fdinfo.txt", 
+              no_checkpoint );
+    if ((fs = fopen( fname, "w" )) == NULL) {
+        perror( "Unable to open file for checkpoint's fd info" );
+        return -1; 
+    }
+
+    SLIST_FOREACH( fdentp, fd_list, nextfd ) {
+        fprintf( fs, "file: %s\nmode: %d\noffset: %d\n",
+                fdentp->path, fdentp->mode, fdentp->offset );
+    }
+
+    return 0;
 }
 
 void timer_handler(int signum)
@@ -858,6 +877,16 @@ void timer_handler(int signum)
 #endif
 	close_chk_file();
 
+    // Clean previous fd info
+    clean_fdinfo();   
+   
+    // Populate list with file descriptor's info
+    if (get_fdinfo() != 0) {
+        fprintf( stderr, "Checkpoint %u: errors while getting "
+                 "file descriptor's info\n", no_checkpoint );
+    }
+
+    // Write out the list of the file descriptor's info
     if (write_fdinfo() != 0) {
         fprintf( stderr, "Checkpoint %u: errors while dumping "
                  "open files info\n", no_checkpoint );
