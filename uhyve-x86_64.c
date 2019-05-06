@@ -800,7 +800,10 @@ static int get_fdinfo()
 
 out1:
     
-    closedir(dir); // TODO: check for return error!
+    if (closedir(dir) != 0) {
+        perror( "Error closing the dir  /proc/self/fd" );
+        ret = -1;
+    }
 
 out0:
     
