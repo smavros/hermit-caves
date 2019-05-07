@@ -789,11 +789,12 @@ static int get_fdinfo()
                 goto out1; 
             }
             
-            // Insert file's path, mode and offset in fdinfo list
+            // Insert file's path, mode and offset in fd tail queue's
+            // tail so there is no reversal in the order of fds
             snprintf( fdentp->path, PATH_MAX, fabspath );
             fdentp->mode = mode;
             fdentp->offset = offset;
-            SLIST_INSERT_HEAD( fd_list, fdentp, nextfd );
+            STAILQ_INSERT_TAIL( fd_tailqp, fdentp, nextfd );
         } 
         // TODO: Check if we also have to deal with sockets?
     }
@@ -812,7 +813,7 @@ out0:
 
 static int write_fdinfo()
 {
-    // Traverses the singly-linked list fd_list and appends the file
+    // Traverses the singly-linked list fd_tailqp and appends the file
     // descriptor's entry info in the file fname. On success return 0 on
     // failure -1
 
@@ -828,7 +829,7 @@ static int write_fdinfo()
         return -1; 
     }
 
-    SLIST_FOREACH( fdentp, fd_list, nextfd ) {
+    STAILQ_FOREACH( fdentp, fd_tailqp, nextfd ) {
         fprintf( fs, "file:%s\nmode:%d\noffset:%d\n",
                 fdentp->path, fdentp->mode, fdentp->offset );
     }
@@ -884,7 +885,7 @@ void timer_handler(int signum)
 
     // Clean previous fd info
     clean_fdinfo();   
-   
+    
     // Populate list with file descriptor's info
     if (get_fdinfo() != 0) {
         fprintf( stderr, "Checkpoint %u: errors while getting "
@@ -1112,7 +1113,7 @@ int read_fdinfo()
 
         fdentp->offset = atoi( value );
         
-        SLIST_INSERT_HEAD( fd_list, fdentp, nextfd );
+        STAILQ_INSERT_TAIL( fd_tailqp, fdentp, nextfd );
 
         free(line); 
     }
@@ -1149,8 +1150,8 @@ int restore_file_descriptors()
 
     read_fdinfo();
 
-    SLIST_FOREACH( fdentp, fd_list, nextfd ) {
-
+    STAILQ_FOREACH( fdentp, fd_tailqp, nextfd ) {
+        
         // try to open the file with certain mode
         if ((rfd = open( fdentp->path, fdentp->mode )) == -1) {
             fprintf( stderr, "Unable to restore %s\n", fdentp->path );

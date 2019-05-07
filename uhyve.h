@@ -97,16 +97,16 @@ struct fd_entry {
     char path[PATH_MAX];
     int mode;
     off_t offset;
-    SLIST_ENTRY(fd_entry) nextfd; 
+    STAILQ_ENTRY(fd_entry) nextfd; 
 };
 
 // Typedef the macro defined struct to avoid re-declaration of anonymous
 // struct that will lead to -Wincopatible-pointer-types
-typedef SLIST_HEAD( fd_info_head, fd_entry ) fd_list_t;
+typedef STAILQ_HEAD( fd_info_head, fd_entry ) fd_tailq_t;
 
 typedef struct _migration_metadata migration_metadata_t;
 
-extern fd_list_t* fd_list;
+extern fd_tailq_t* fd_tailqp;
 
 void print_registers(void);
 void timer_handler(int signum);

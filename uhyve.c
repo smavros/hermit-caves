@@ -96,7 +96,7 @@ __thread struct kvm_run *run = NULL;
 __thread int vcpufd = -1;
 __thread uint32_t cpuid = 0;
 static sem_t net_sem;
-fd_list_t *fd_list = NULL;
+fd_tailq_t *fd_tailqp = NULL;
 
 int uhyve_argc = -1;
 int uhyve_envc = -1;
@@ -121,28 +121,40 @@ typedef struct {
 
 static inline void init_fdinfo()
 {
-    // Initialize the linked list for the fd info in any case. We might
-    // start with/out checkpointing but if we are starting from previous
-    // checkpoint the fd_list must exist. A call to clean_fdinfo() is
-    // valid even for empty list.
-    fd_list = calloc( 1, sizeof( fd_list_t ) );
-    fd_list->slh_first = NULL;
+    // Initialize the singly-linked tail queue for the fd info in any
+    // case. We might start with/out checkpointing but if we are
+    // starting from previous checkpoint the fd_tailqp must exist. A
+    // call to clean_fdinfo() is valid even for empty list.
+    
+    fd_tailqp = calloc( 1, sizeof( fd_tailq_t ) );
+    fd_tailqp->stqh_first = NULL;
+    fd_tailqp->stqh_last = &(fd_tailqp->stqh_first);
 }
 
 void clean_fdinfo()
 {
-    fd_entry_t* ent;
-    while (!SLIST_EMPTY( fd_list )) {
-        ent = SLIST_FIRST( fd_list );
-        SLIST_REMOVE_HEAD( fd_list, nextfd );
-        free( ent );
+    // Remove all the elements of the single-linked tail queue that
+    // holds the file descriptors info
+     
+    fd_entry_t* p = STAILQ_FIRST( fd_tailqp );
+    fd_entry_t* pnext;
+  
+    // Traverse the tail queue and free all elements
+    while (p != NULL) {
+        pnext = STAILQ_NEXT( p, nextfd );
+        free( p ); 
+        p = pnext;
     }
+    
+    // Clean the head
+    fd_tailqp->stqh_first = NULL;
+    fd_tailqp->stqh_last = &(fd_tailqp->stqh_first);
 }
 
 static inline void free_fdinfo()
 {
-    // Free the fd_list_t that was heap allocated by init_fdinfo()
-    free( fd_list );
+    // Free the fd_tailqp_t that was heap allocated by init_fdinfo()
+    free( fd_tailqp );
 }
 
 static inline size_t min(const size_t a, const size_t b)
