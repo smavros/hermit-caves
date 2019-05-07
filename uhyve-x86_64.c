@@ -829,7 +829,7 @@ static int write_fdinfo()
     }
 
     SLIST_FOREACH( fdentp, fd_list, nextfd ) {
-        fprintf( fs, "file: %s\nmode: %d\noffset: %d\n",
+        fprintf( fs, "file:%s\nmode:%d\noffset:%d\n",
                 fdentp->path, fdentp->mode, fdentp->offset );
     }
 
@@ -1058,41 +1058,67 @@ int get_keyvalue_value( char** value, char* line,
     return 0;
 }
 
-int read_fdinfo( FILE* fs, char fname[PATH_MAX], 
-        char fpath[PATH_MAX], int* mode, off_t* offset )
+int read_fdinfo()
 {
-    // Reads file descriptors info from checkpoint files. Each fd is
+    // Reads file descriptors info from checkpoint file. Each fd is
     // represented with 3 lines for absolute path, mode and offset. For
     // each line the entries are read with get_keyvalue_value(). In case
-    // of failure returns -1, if one fd entry is read returns 1
-    // otherwise returns 0.
+    // of failure returns -1 otherwise returns 0.
+    
+    FILE* fs = NULL; 
+    char fname[PATH_MAX];   // dumping file
+    
+    char* value = NULL;
+    fd_entry_t* fdentp; 
     
     char* line = NULL;
-    char* value = NULL;
     size_t len = 0;
     ssize_t nreadl;
+
+    int ret = 0;
     
-    // read file's path
-    if ((nreadl = getline( &line, &len, fs )) == -1) goto noentry;
-    if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
-    snprintf( fpath, PATH_MAX, value );
-
-    // read mode
-    if ((nreadl = getline( &line, &len, fs )) == -1) goto corrupt;
-    if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
-    *mode = atoi(value);
-
-    // read offset
-    if ((nreadl = getline( &line, &len, fs )) == -1) goto corrupt;
-    if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
-    *offset = atoi(value);
-
-    free(line); 
+    snprintf( fname, PATH_MAX, "checkpoint/chk%u_fdinfo.txt", 
+              no_checkpoint );
+    if ((fs = fopen( fname, "r" )) == NULL) {
+        perror( "Unable to open file" );
+        ret = -1;
+        goto out;
+    }
     
-    return 1;
+    while (true) {
+        
+        // allocate next fd entry
+        if((fdentp = calloc( 1, sizeof( fd_entry_t ))) == NULL) {
+            fprintf( stderr, "No memory for fdentp" );
+            ret = -1;
+            goto fail; 
+        }
+        
+        // read file path and if there is not new one break
+        if ((nreadl = getline( &line, &len, fs )) == -1) break;
+        if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
+        
+        snprintf( fdentp->path, PATH_MAX, value );
+        
+        // read mode
+        if ((nreadl = getline( &line, &len, fs )) == -1) goto corrupt;
+        if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
+        
+        fdentp->mode = atoi( value );
+        
+        // read offset
+        if ((nreadl = getline( &line, &len, fs )) == -1) goto corrupt;
+        if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
 
-noentry:
-    
+        fdentp->offset = atoi( value );
+        
+        SLIST_INSERT_HEAD( fd_list, fdentp, nextfd );
+
+        free(line); 
+    }
+
+    fclose(fs);
+
     return 0;
 
 corrupt:
@@ -1101,7 +1127,11 @@ corrupt:
 
 fail:
  
-    free(line); 
+    free(line);
+
+out:
+    
+    fclose(fs); 
     
     return -1;
 }
@@ -1112,48 +1142,34 @@ int restore_file_descriptors()
     // fdinfo files and opening the files with the right absolut path,
     // mode and offset. In case of failure returns -1 otherwise 0.
     
-    FILE* fs = NULL; 
-    char fname[PATH_MAX];   // dumping file
-    char fpath[PATH_MAX];   // file to be restored
-    off_t offset;
-    int mode;
     int fdi;    // file description info
     int rfd;    // restored file descriptor
     int ret = 0;
+    fd_entry_t* fdentp; 
 
-    snprintf( fname, PATH_MAX, "checkpoint/chk%u_fdinfo.txt", 
-              no_checkpoint );
-    if ((fs = fopen( fname, "r" )) == NULL) {
-        perror( "Unable to open file" );
-        ret = -1;
-        goto out;
-    }
+    read_fdinfo();
 
-    while (fdi = read_fdinfo( fs, fname, fpath, &mode, &offset )) {
-        
+    SLIST_FOREACH( fdentp, fd_list, nextfd ) {
+
         // try to open the file with certain mode
-        if ((rfd = open( fpath, mode )) == -1) {
-            fprintf( stderr, "Unable to restore %s\n", fpath );
+        if ((rfd = open( fdentp->path, fdentp->mode )) == -1) {
+            fprintf( stderr, "Unable to restore %s\n", fdentp->path );
             perror("open");
             ret = -1;
             goto out;
         }
 
         // try to set file's offset
-        if (lseek( rfd, offset, SEEK_SET ) == -1) {
-            fprintf( stderr, "Unable to set offset at %s\n", fpath );
+        if (lseek( rfd, fdentp->offset, SEEK_SET ) == -1) {
+            fprintf( stderr, "Unable to set offset at %s\n", 
+                    fdentp->path );
             perror("lseek");
             ret -1;
             goto out;
         }
-    }    
-
-    // in case of read_fdinfo() failure
-    if (fdi == -1) ret = -1;
+    }
 
 out:
-
-    fclose(fs);
     
     return ret;
 }
