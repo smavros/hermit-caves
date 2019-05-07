@@ -721,6 +721,10 @@ int uhyve_init(char *path)
 		if (full_chk && (strcmp(full_chk, "0") != 0))
 			full_checkpoint = true;
 	}
+	
+	// Initialize fd info linked list in any case since we might start
+	// from a checkpointed process
+    init_fdinfo();  
 
 	vcpu_threads = (pthread_t*) calloc(ncores, sizeof(pthread_t));
 	if (!vcpu_threads)
@@ -772,7 +776,7 @@ int uhyve_init(char *path)
 		if (netfd < 0)
 			err(1, "unable to initialized network");
 	}
-
+	
 	return ret;
 }
 
@@ -815,10 +819,6 @@ int uhyve_loop(int argc, char **argv)
 	if (hermit_check)
 		ts = atoi(hermit_check);
 	
-	// Initialize fd info linked list in any case since we might start
-	// from a checkpointed process
-    init_fdinfo();  
-
 	if (hermit_mig_support) {
 		set_migration_target(hermit_mig_support, MIGRATION_PORT);
 		set_migration_params(hermit_mig_params);
