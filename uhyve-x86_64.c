@@ -1073,7 +1073,7 @@ int read_fdinfo()
     fd_entry_t* fdentp; 
     
     char* line = NULL;
-    size_t len = 0;
+    size_t len = PATH_MAX; // underestimated due to "file:" key
     ssize_t nreadl;
 
     int ret = 0;
@@ -1083,20 +1083,27 @@ int read_fdinfo()
     if ((fs = fopen( fname, "r" )) == NULL) {
         perror( "Unable to open file" );
         ret = -1;
-        goto out;
+        goto out0;
     }
-    
+
+    // line buffer for getline()
+    if ((line = calloc( 1, PATH_MAX )) == NULL) {
+        fprintf( stderr, "No memory for getline()'s buffer" );
+        ret = -1;
+        goto out0;
+    }
+
     while (true) {
         
         // allocate next fd entry
         if((fdentp = calloc( 1, sizeof( fd_entry_t ))) == NULL) {
             fprintf( stderr, "No memory for fdentp" );
             ret = -1;
-            goto fail; 
+            goto out1; 
         }
         
         // read file path and if there is not new one break
-        if ((nreadl = getline( &line, &len, fs )) == -1) break;
+        if ((nreadl = getline( &line, &len, fs )) == -1) goto nonewline;
         if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
         
         snprintf( fdentp->path, PATH_MAX, value );
@@ -1114,27 +1121,33 @@ int read_fdinfo()
         fdentp->offset = atoi( value );
         
         STAILQ_INSERT_TAIL( fd_tailqp, fdentp, nextfd );
-
-        free(line); 
     }
 
-    fclose(fs);
+    free( line );
+    fclose( fs );
 
-    return 0;
+    return ret;
 
 corrupt:
-
+    
     fprintf( stderr, "Could not read line: %s seems corrupted\n", fname );
 
 fail:
- 
-    free(line);
+    
+    ret = -1;
 
-out:
+nonewline:
     
-    fclose(fs); 
+    free( fdentp );
+
+out1: 
     
-    return -1;
+    free( line );
+    fclose( fs );
+
+out0: 
+    
+    return ret;
 }
 
 int restore_file_descriptors()
