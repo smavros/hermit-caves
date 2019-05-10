@@ -319,6 +319,21 @@ static int vcpu_loop(void)
 	} else {
 		init_cpu_state(elf_entry);
 	}
+    
+    // File descriptors have to be restored after the vcpu restoration.
+    // The vcpus are controlled with special-purpose files which are
+    // represented with fds. If we don't let the application open those
+    // first we will have the fds with different order than the one in
+    // the last checkpoint's runtime. This will lead to a crash of kvm.
+    if (restart) {
+#ifdef __x86_64__
+        if (restore_file_descriptors() != 0) {
+            fputs( "Could NOT restore all file descriptors\n", stderr ); 
+        }
+#else
+	err( 1, "Open files re-opening is supported only for X86_64" );
+#endif
+    }
 
 	if (cpuid == 0) {
 		if (restart) {

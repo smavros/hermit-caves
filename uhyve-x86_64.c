@@ -1254,10 +1254,6 @@ int load_checkpoint(uint8_t* mem, char* path)
 		fclose(f);
 	}
 
-    if (restore_file_descriptors() != 0) {
-        fputs( "Could NOT restore all file descriptors\n", stderr ); 
-    }
-
 	if (verbose) {
 		gettimeofday(&end, NULL);
 		size_t msec = (end.tv_sec - begin.tv_sec) * 1000;

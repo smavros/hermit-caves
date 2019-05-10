@@ -126,5 +126,6 @@ size_t determine_dest_offset(size_t src_addr);
 void determine_dirty_pages(void (*save_page_handler)(void*, size_t, void*, size_t));
 void virt_to_phys(const size_t virtual_address, size_t* const physical_address, size_t* const physical_address_page_end);
 void clean_fdinfo();
+int restore_file_descriptors();
 
 #endif
