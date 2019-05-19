@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/sendfile.h>
 
 #include "uhyve-migration.h"
 #include "uhyve.h"
@@ -288,6 +289,55 @@ int send_data(void *buffer, size_t length)
 	}
 
 	return bytes_sent;
+}
+
+/**
+ * \brief Sends regular files via the migration socket using sendfile
+ * syscall. In case of success returns 0 otherwise -1 
+ *
+ * \params Pointer to the file descriptor's info
+ */
+int send_file( fd_entry_t* fdentp )
+{
+    ssize_t length = fdentp->size;
+    ssize_t total_bytes_send = 0;
+    ssize_t bytes_send;
+    off_t offset = 0; // Send the file without modifing it's offset 
+    int errsv = 0;
+    int ret = 0;
+
+    // TODO: Because of the need to send the fd_entry we hav to use
+    // TCP_CORK to tune the performance of the socket (see tcp(7))
+    
+    // First send the fd info
+    send_data( fdentp, sizeof(fd_entry_t) );
+   
+    // Now send the file itself
+    while( bytes_send < length ) {
+        
+        bytes_send = sendfile( fdentp->nofd, com_sock, &fdentp->offset,
+                length - total_bytes_send ); 
+        
+        // Check error of sendfile 
+        if (bytes_send == -1) {
+            
+            // Save sendfile's errno 
+            errsv = errno; 
+           
+            // In case of EINVAL or ENOSYS fallback to send(2) for the
+            // remaining data TODO: maybe add `send_data_from_file()`
+            if (errsv == EINVAL || errsv == ENOSYS) {
+                // TODO: send_data( ... )
+            } else { 
+                warnx( "sendfile(): %s", strerror( errsv ) );
+                ret = -1;
+            } 
+        } else {
+            total_bytes_send += bytes_send;
+        }
+    }
+    
+    return ret;
 }
 
 /**

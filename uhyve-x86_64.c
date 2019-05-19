@@ -794,6 +794,8 @@ static int get_fdinfo()
             snprintf( fdentp->path, PATH_MAX, fabspath );
             fdentp->mode = mode;
             fdentp->offset = offset;
+            fdentp->nofd = nofd;
+            fdentp->size = fstatbuf.st_size; 
             STAILQ_INSERT_TAIL( fd_tailqp, fdentp, nextfd );
         } 
         // TODO: Check if we also have to deal with sockets?
@@ -932,6 +934,7 @@ void *migration_handler(void *arg)
 	sigset_t *signal_mask = (sigset_t *)arg;
 	int res = 0;
 	size_t i = 0;
+    fd_entry_t* fdentp;
 
 	int       sig_caught;    /* signal caught       */
 
@@ -995,6 +998,24 @@ void *migration_handler(void *arg)
 		res = send_data(&clock, sizeof(clock));
 		fprintf(stderr, "Clock sent! (%d bytes)\n", res);
 	}
+
+    /* Clean previous fd info */
+    clean_fdinfo();   
+    
+    // TODO: this must be replaced with some sort of files-registry to
+    // avoid leaving behind generated and closed files
+    
+    /* Populate list with file descriptor's info */
+    if (get_fdinfo() != 0) {
+        fputs( "Migration: errors while getting file descriptor's "
+                "info\n", stderr );
+    }
+
+    /* For each currently open files */
+    struct stat statbuf;
+    STAILQ_FOREACH( fdentp, fd_tailqp, nextfd ) {
+        //send_file( fdentp ); 
+    }
 
 	/* close socket */
 	close_migration_channel();

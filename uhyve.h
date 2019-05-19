@@ -96,7 +96,11 @@ typedef struct fd_entry fd_entry_t;
 struct fd_entry {
     char path[PATH_MAX];
     int mode;
+    int nofd; 
+    // next two fields (offset,size) are used only by the migration
+    // mechanism and they will not be printed oh the checkX_fdinfo files
     off_t offset;
+    off_t size;
     STAILQ_ENTRY(fd_entry) nextfd; 
 };
 
