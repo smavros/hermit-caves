@@ -823,6 +823,8 @@ static int write_fdinfo()
         return -1; 
     }
 
+    fprintf( fs, "nfiles:%d\n", fd_tailqp->nfiles ); 
+
     STAILQ_FOREACH( fdentp, fd_tailqp->head, nextfd ) {
         fprintf( fs, "file:%s\nmode:%d\noffset:%d\n",
                 fdentp->path, fdentp->mode, fdentp->offset );
@@ -1065,7 +1067,8 @@ int read_fdinfo()
     
     char* value = NULL;
     fd_entry_t fdentry; 
-    
+   
+    int nfiles = 0;
     char* line = NULL;
     size_t len = PATH_MAX; // underestimated due to "file:" key
     ssize_t nreadl;
@@ -1077,20 +1080,26 @@ int read_fdinfo()
     if ((fs = fopen( fname, "r" )) == NULL) {
         perror( "Unable to open file" );
         ret = -1;
-        goto out0;
+        goto out;
     }
 
     // line buffer for getline()
     if ((line = calloc( 1, PATH_MAX )) == NULL) {
         fprintf( stderr, "No memory for getline()'s buffer" );
         ret = -1;
-        goto out0;
+        goto out;
     }
 
-    while (true) {
+    // read nfiles from the checkpoint file
+    if ((nreadl = getline( &line, &len, fs )) == -1) goto corrupt;
+    if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
+    
+    nfiles = atoi( value );
+
+    for(int i=0; i<nfiles; ++i) {
         
         // read file path and if there is not new one break
-        if ((nreadl = getline( &line, &len, fs )) == -1) goto out1;
+        if ((nreadl = getline( &line, &len, fs )) == -1) goto corrupt;
         if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
         
         snprintf( fdentry.path, PATH_MAX, value );
@@ -1123,12 +1132,10 @@ fail:
     
     ret = -1;
 
-out1: 
+out: 
     
     free( line );
     fclose( fs );
-
-out0: 
     
     return ret;
 }
