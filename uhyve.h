@@ -106,10 +106,16 @@ struct fd_entry {
 
 // Typedef the macro defined struct to avoid re-declaration of anonymous
 // struct that will lead to -Wincopatible-pointer-types
-typedef STAILQ_HEAD( fd_info_head, fd_entry ) fd_tailq_t;
+typedef STAILQ_HEAD( fd_info_head, fd_entry ) fd_tailq_head_t;
 
 typedef struct _migration_metadata migration_metadata_t;
 
+typedef struct {
+    fd_tailq_head_t* head;
+    int nfiles;
+} fd_tailq_t;
+
+// TODO: turn this into a static variable
 extern fd_tailq_t* fd_tailqp;
 
 void print_registers(void);
@@ -130,6 +136,7 @@ size_t determine_dest_offset(size_t src_addr);
 void determine_dirty_pages(void (*save_page_handler)(void*, size_t, void*, size_t));
 void virt_to_phys(const size_t virtual_address, size_t* const physical_address, size_t* const physical_address_page_end);
 void clean_fdinfo();
+int insert_fdinfo();
 int restore_file_descriptors();
 
 #endif
