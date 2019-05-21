@@ -125,18 +125,20 @@ static inline void init_fdinfo()
     // case. We might start with/out checkpointing but if we are
     // starting from previous checkpoint the fd_tailqp must exist. A
     // call to clean_fdinfo() is valid even for empty list.
+    fd_tailqp = calloc( 1, sizeof( fd_tailq_t ) ); 
+
+    fd_tailqp->head = calloc( 1, sizeof( fd_tailq_head_t ) );
+    fd_tailqp->head->stqh_first = NULL;
+    fd_tailqp->head->stqh_last = &(fd_tailqp->head->stqh_first);
     
-    fd_tailqp = calloc( 1, sizeof( fd_tailq_t ) );
-    fd_tailqp->stqh_first = NULL;
-    fd_tailqp->stqh_last = &(fd_tailqp->stqh_first);
+    fd_tailqp->nfiles = 0;
 }
 
 void clean_fdinfo()
 {
     // Remove all the elements of the single-linked tail queue that
     // holds the file descriptors info
-     
-    fd_entry_t* p = STAILQ_FIRST( fd_tailqp );
+    fd_entry_t* p = STAILQ_FIRST( fd_tailqp->head );
     fd_entry_t* pnext;
   
     // Traverse the tail queue and free all elements
@@ -147,14 +149,36 @@ void clean_fdinfo()
     }
     
     // Clean the head
-    fd_tailqp->stqh_first = NULL;
-    fd_tailqp->stqh_last = &(fd_tailqp->stqh_first);
+    fd_tailqp->head->stqh_first = NULL;
+    fd_tailqp->head->stqh_last = &(fd_tailqp->head->stqh_first);
+
+    // Zero number of files
+    fd_tailqp->nfiles = 0;
 }
 
 static inline void free_fdinfo()
 {
     // Free the fd_tailqp_t that was heap allocated by init_fdinfo()
-    free( fd_tailqp );
+    free( fd_tailqp->head );
+    free( fd_tailqp ); 
+}
+
+inline int insert_fdinfo( fd_entry_t* fdentry )
+{
+    fd_entry_t* new_fdentry;
+    
+    if((new_fdentry = calloc( 1, sizeof( fd_entry_t ))) == NULL) {
+        fprintf( stderr, "No memory for fdentry" );
+        return -1;
+    }
+    
+    *new_fdentry = *fdentry;
+    
+    STAILQ_INSERT_TAIL( fd_tailqp->head, new_fdentry, nextfd );
+    
+    fd_tailqp->nfiles++;
+
+    return 0;
 }
 
 static inline size_t min(const size_t a, const size_t b)

@@ -735,7 +735,7 @@ static int get_fdinfo()
     int ret = 0;
     int nofd, mode;
     off_t offset;
-    fd_entry_t* fdentp = NULL;
+    fd_entry_t fdentry;
 
     // Open /proc/self/fd/
     if ((dir = opendir(procfs)) == NULL) {
@@ -782,19 +782,13 @@ static int get_fdinfo()
                 goto out1;
             }
 
-            // Allocate next fd entry 
-            if((fdentp = calloc( 1, sizeof( fd_entry_t ))) == NULL) {
-                fprintf( stderr, "No memory for fdentp" );
-                ret = -1;
-                goto out1; 
-            }
-            
             // Insert file's path, mode and offset in fd tail queue's
             // tail so there is no reversal in the order of fds
-            snprintf( fdentp->path, PATH_MAX, fabspath );
-            fdentp->mode = mode;
-            fdentp->offset = offset;
-            STAILQ_INSERT_TAIL( fd_tailqp, fdentp, nextfd );
+            snprintf( fdentry.path, PATH_MAX, fabspath );
+            fdentry.mode = mode;
+            fdentry.offset = offset;
+            
+            insert_fdinfo( &fdentry ); 
         } 
         // TODO: Check if we also have to deal with sockets?
     }
@@ -829,7 +823,7 @@ static int write_fdinfo()
         return -1; 
     }
 
-    STAILQ_FOREACH( fdentp, fd_tailqp, nextfd ) {
+    STAILQ_FOREACH( fdentp, fd_tailqp->head, nextfd ) {
         fprintf( fs, "file:%s\nmode:%d\noffset:%d\n",
                 fdentp->path, fdentp->mode, fdentp->offset );
     }
@@ -1070,7 +1064,7 @@ int read_fdinfo()
     char fname[PATH_MAX];   // dumping file
     
     char* value = NULL;
-    fd_entry_t* fdentp; 
+    fd_entry_t fdentry; 
     
     char* line = NULL;
     size_t len = PATH_MAX; // underestimated due to "file:" key
@@ -1095,32 +1089,25 @@ int read_fdinfo()
 
     while (true) {
         
-        // allocate next fd entry
-        if((fdentp = calloc( 1, sizeof( fd_entry_t ))) == NULL) {
-            fprintf( stderr, "No memory for fdentp" );
-            ret = -1;
-            goto out1; 
-        }
-        
         // read file path and if there is not new one break
-        if ((nreadl = getline( &line, &len, fs )) == -1) goto nonewline;
+        if ((nreadl = getline( &line, &len, fs )) == -1) goto out1;
         if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
         
-        snprintf( fdentp->path, PATH_MAX, value );
+        snprintf( fdentry.path, PATH_MAX, value );
         
         // read mode
         if ((nreadl = getline( &line, &len, fs )) == -1) goto corrupt;
         if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
         
-        fdentp->mode = atoi( value );
+        fdentry.mode = atoi( value );
         
         // read offset
         if ((nreadl = getline( &line, &len, fs )) == -1) goto corrupt;
         if (get_keyvalue_value( &value, line, fname ) == -1) goto fail;
 
-        fdentp->offset = atoi( value );
+        fdentry.offset = atoi( value );
         
-        STAILQ_INSERT_TAIL( fd_tailqp, fdentp, nextfd );
+        insert_fdinfo( &fdentry ); 
     }
 
     free( line );
@@ -1135,10 +1122,6 @@ corrupt:
 fail:
     
     ret = -1;
-
-nonewline:
-    
-    free( fdentp );
 
 out1: 
     
@@ -1163,7 +1146,7 @@ int restore_file_descriptors()
 
     read_fdinfo();
 
-    STAILQ_FOREACH( fdentp, fd_tailqp, nextfd ) {
+    STAILQ_FOREACH( fdentp, fd_tailqp->head, nextfd ) {
         
         // try to open the file with certain mode
         if ((rfd = open( fdentp->path, fdentp->mode )) == -1) {
