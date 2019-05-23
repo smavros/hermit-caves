@@ -88,6 +88,7 @@ typedef struct _migration_metadata {
 	size_t guest_size;
 	uint32_t no_checkpoint;
 	uint64_t elf_entry;
+    int nfiles;	
 	bool full_checkpoint;
 } migration_metadata_t;
 

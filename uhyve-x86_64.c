@@ -938,13 +938,25 @@ void *migration_handler(void *arg)
 	sigwait(signal_mask, &sig_caught);
 	connect_to_server();
 
+    /* Get the number of files to be migrated */
+    
+    // TODO: this must be replaced with some sort of files-registry to
+    // avoid leaving behind generated and closed files
+    clean_fdinfo();   
+    if (get_fdinfo() != 0) {
+        fputs( "Migration: errors while getting file descriptor's "
+                "info\n", stderr );
+    }
+
 	/* send metadata */
 	migration_metadata_t metadata = {
 		ncores,
 		guest_size,
 	       	0, /* no_checkpoint */
 		elf_entry,
-		full_checkpoint};
+	    fd_tailqp->nfiles,	
+		full_checkpoint
+	};
 
 	/* the guest size is calculated at the destination again */
 	if ((guest_size-KVM_32BIT_GAP_SIZE) >= KVM_32BIT_GAP_START) {
@@ -994,26 +1006,21 @@ void *migration_handler(void *arg)
 		res = send_data(&clock, sizeof(clock));
 		fprintf(stderr, "Clock sent! (%d bytes)\n", res);
 	}
-
-    /* Clean previous fd info */
-    clean_fdinfo();   
     
-    // TODO: this must be replaced with some sort of files-registry to
-    // avoid leaving behind generated and closed files
-    
-    /* Populate list with file descriptor's info */
-    if (get_fdinfo() != 0) {
-        fputs( "Migration: errors while getting file descriptor's "
-                "info\n", stderr );
-    }
-
-    /* For each currently open files */
-    struct stat statbuf;
+    // TODO: Because of the need to send the fd_entry we hav to use
+    // TCP_CORK to tune the performance of the socket (see tcp(7))
+   
+    /* send fd info */
     STAILQ_FOREACH( fdentp, fd_tailqp->head, nextfd ) {
-        //send_file( fdentp ); 
+        send_data( fdentp, sizeof( fd_entry_t ) ); 
+    }
+    
+    /* send files */
+    STAILQ_FOREACH( fdentp, fd_tailqp->head, nextfd ) {
+        send_file( fdentp ); 
     }
 
-	/* close socket */
+    /* close socket */
 	close_migration_channel();
 
 	exit(EXIT_SUCCESS);

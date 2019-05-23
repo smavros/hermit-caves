@@ -305,12 +305,6 @@ int send_file( fd_entry_t* fdentp )
     off_t offset = 0; // Send the file without modifing it's offset 
     int errsv = 0;
     int ret = 0;
-
-    // TODO: Because of the need to send the fd_entry we hav to use
-    // TCP_CORK to tune the performance of the socket (see tcp(7))
-    
-    // First send the fd info
-    send_data( fdentp, sizeof(fd_entry_t) );
    
     // Now send the file itself
     while( bytes_send < length ) {
