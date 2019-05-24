@@ -89,6 +89,7 @@ uint8_t* klog = NULL;
 uint8_t* guest_mem = NULL;
 uint32_t no_checkpoint = 0;
 uint32_t ncores = 1;
+int nfiles = 0;
 uint64_t elf_entry;
 int kvm = -1, vmfd = -1, netfd = -1, efd = -1;
 uint8_t* mboot = NULL;
@@ -741,6 +742,7 @@ int uhyve_init(char *path)
 		ncores = metadata.ncores;
 		guest_size = metadata.guest_size;
 		elf_entry = metadata.elf_entry;
+		nfiles = metadata.nfiles;
 		full_checkpoint = metadata.full_checkpoint;
 	} else if ((f = fopen("checkpoint/chk_config.txt", "r")) != NULL) {
 		int tmp = 0;
@@ -803,8 +805,18 @@ int uhyve_init(char *path)
 		if (load_checkpoint(guest_mem, path) != 0)
 			exit(EXIT_FAILURE);
 	} else if (start_mig_server) {
+		
 		load_migration_data(guest_mem);
 		close_migration_channel();
+
+	    // Check if the number of files received is the expected
+	    if (fd_tailqp->nfiles != nfiles) {
+	        fprintf( stderr, "Received different number of files (%d) "
+	                "than the expected one (%d)\n", fd_tailqp->nfiles,
+	                nfiles );
+	        exit(EXIT_FAILURE);
+        };
+	
 	} else {
 		if (load_kernel(guest_mem, path) != 0)
 			exit(EXIT_FAILURE);

@@ -117,6 +117,7 @@ typedef struct {
 
 // TODO: turn this into a static variable
 extern fd_tailq_t* fd_tailqp;
+extern int nfiles;
 
 void print_registers(void);
 void timer_handler(int signum);
