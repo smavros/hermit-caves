@@ -1014,6 +1014,7 @@ void *migration_handler(void *arg)
     STAILQ_FOREACH( fdentp, fd_tailqp->head, nextfd ) {
         send_data( fdentp, sizeof( fd_entry_t ) ); 
     }
+	fprintf( stderr, "File info sent!\n" );
     
     /* send files */
     STAILQ_FOREACH( fdentp, fd_tailqp->head, nextfd ) {
@@ -1056,6 +1057,20 @@ int load_migration_data(uint8_t* mem)
 		data.clock = clock.clock;
 		kvm_ioctl(vmfd, KVM_SET_CLOCK, &data);
 	}
+
+	/* receive fd info */
+    fd_entry_t fdentry;
+    for (int i=0; i<nfiles; i++) {
+        recv_data( &fdentry, sizeof( fd_entry_t ) );
+        insert_fdinfo( &fdentry );
+    }
+    fprintf( stderr, "Files info received!\n" );
+
+    /* receive files */
+    fd_entry_t* fdentryp = &fdentry;
+    STAILQ_FOREACH( fdentryp, fd_tailqp->head, nextfd ) {
+        recv_file( fdentryp );
+    }
 }
 
 int get_keyvalue_value( char** value, char* line, 
@@ -1304,8 +1319,11 @@ void wait_for_incomming_migration(migration_metadata_t *metadata, uint16_t liste
 	/* receive metadata state */
 	res = recv_data(metadata, sizeof(migration_metadata_t));
 	fprintf(stderr, "Metadata received! (%d bytes)\n", res);
-	fprintf(stderr, "NCORES = %u; GUEST_SIZE = %zu; NO_CHKPOINT = %u; ELF_ENTRY = 0x%lx; FULL_CHKPT = %d\n",
-			metadata->ncores, metadata->guest_size, metadata->no_checkpoint, metadata->elf_entry, metadata->full_checkpoint);
+	fprintf(stderr, "NCORES = %u; GUEST_SIZE = %zu; NO_CHKPOINT = %u; "
+	        "ELF_ENTRY = 0x%lx; NFILES=%d; FULL_CHKPT = %d\n",
+			metadata->ncores, metadata->guest_size, 
+			metadata->no_checkpoint, metadata->elf_entry, 
+			metadata->nfiles, metadata->full_checkpoint);
 }
 
 void init_kvm_arch(void)
