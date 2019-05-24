@@ -35,6 +35,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/sendfile.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "uhyve-migration.h"
 #include "uhyve.h"
@@ -292,6 +295,66 @@ int send_data(void *buffer, size_t length)
 }
 
 /**
+ * \brief Receive a file on a SOCK_STREAM. The file's properties (name,
+ * mode, offset, size) are already in the fd_tailqp struct
+ * 
+ * \param fd_tailqp entry with the fd info
+ */
+void recv_file( fd_entry_t* fdentp )
+{
+    ssize_t length = fdentp->size;
+    ssize_t total_received = 0;
+	ssize_t bytes_received = 0;
+    ssize_t bytes_writen = 0; 
+    char buffer[BUFSIZ];
+    FILE* fs;
+
+    // Turn absolute path of fd info to name file
+    char *fname = strrchr( fdentp->path, '/' );
+    
+    // Increment pointer to avoid '/' in the beggining
+    fname++;
+    
+    // Save the new fname as fdnetp->path so restore_file_descriptors()
+    // will open the file to the parent directory
+    strcpy( fdentp->path, fname );    
+
+    // Open file stream
+    if ((fs = fopen( fname, "w" )) == NULL) {
+        perror( "fopen" );
+        exit( EXIT_FAILURE );
+    }
+
+	while ( total_received < length ) {
+	    // receive to buffer
+		bytes_received = recv( com_sock, buffer, BUFSIZ, 0 );
+
+		// Write whatever was received to the file
+        if ( bytes_received > 0 ) {
+            
+            bytes_writen = fwrite( buffer, sizeof(char), 
+                    bytes_received, fs );
+           
+            // Check if everything was writen to the file
+            if ( bytes_writen != bytes_received ) {
+                fprintf( stderr, "Couldn't write buffer to file %s\n",
+                        fname );
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        total_received += bytes_received;
+        
+        break;	
+	}
+
+    // Fds will be open properly by restore_file_descriptors()
+	fclose( fs );
+
+	fprintf( stderr, "Received file: %s (%zd bytes)\n", fname, length );
+}
+
+/**
  * \brief Sends regular files via the migration socket using sendfile
  * syscall. In case of success returns 0 otherwise -1 
  *
@@ -305,11 +368,14 @@ int send_file( fd_entry_t* fdentp )
     off_t offset = 0; // Send the file without modifing it's offset 
     int errsv = 0;
     int ret = 0;
-   
+
+    // The file's fd must be open as read only
+    int in_fd = open( fdentp->path, O_RDONLY );
+
     // Now send the file itself
-    while( bytes_send < length ) {
+    while( total_bytes_send < length ) {
         
-        bytes_send = sendfile( fdentp->nofd, com_sock, &fdentp->offset,
+        bytes_send = sendfile( com_sock, in_fd, &offset, 
                 length - total_bytes_send ); 
         
         // Check error of sendfile 
@@ -321,15 +387,25 @@ int send_file( fd_entry_t* fdentp )
             // In case of EINVAL or ENOSYS fallback to send(2) for the
             // remaining data TODO: maybe add `send_data_from_file()`
             if (errsv == EINVAL || errsv == ENOSYS) {
-                // TODO: send_data( ... )
+                // TODO: Add missing implementation
+                fprintf( stderr, " [WARNING]: sendfile() requires "
+                        "fallback because of %s\n", strerror( errsv ) );
+                exit( EXIT_FAILURE ); 
             } else { 
-                warnx( "sendfile(): %s", strerror( errsv ) );
+                warnx( "sendfile: %s", strerror( errsv ) );
                 ret = -1;
+                goto out;
             } 
         } else {
             total_bytes_send += bytes_send;
         }
     }
+
+	fprintf( stderr, "File %s sent! (%zd bytes)\n", fdentp->path, 
+	        total_bytes_send );
+out: 
+    
+    close( in_fd );	
     
     return ret;
 }

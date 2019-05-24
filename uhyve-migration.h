@@ -110,6 +110,7 @@ int send_data(void *buffer, size_t length);
 void send_guest_mem(bool final_dump, size_t mem_chunk_cnt, mem_chunk_t *mem_chunks);
 void recv_guest_mem(size_t mem_chunk_cnt, mem_chunk_t *mem_chunks);
 
+void recv_file( fd_entry_t* fdentp );
 int send_file( fd_entry_t* fdentp );
 #endif /* __UHYVE_MIGRATION_H__ */
 
