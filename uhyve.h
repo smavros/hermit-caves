@@ -139,5 +139,6 @@ void virt_to_phys(const size_t virtual_address, size_t* const physical_address, 
 void clean_fdinfo();
 int insert_fdinfo();
 int restore_file_descriptors();
+int fdinfo_from_checkpoint();
 
 #endif

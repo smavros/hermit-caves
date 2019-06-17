@@ -350,11 +350,31 @@ static int vcpu_loop(void)
     // represented with fds. If we don't let the application open those
     // first we will have the fds with different order than the one in
     // the last checkpoint's runtime. This will lead to a crash of kvm.
-    if (restart) {
+    if (restart || getenv( "HERMIT_MIGRATION_SERVER" )) {
 #ifdef __x86_64__
+         
+        if (restart) {
+            fdinfo_from_checkpoint();
+        }
+
+        // TODO: remove
+        // This is a temporal solution to maintain the right order of
+        // the restored file descriptors
+        int mig = (getenv("HERMIT_MIGRATION_SERVER") != NULL) ? 1 : 0;
+        FILE* fs;
+        if (mig) {
+            char fname[] = "dummy.tmp";
+            fs = fopen( fname, "w" );
+            unlink( fname ); // dummy will be removed after exit
+        }
+
         if (restore_file_descriptors() != 0) {
             fputs( "Could NOT restore all file descriptors\n", stderr ); 
         }
+
+        // TODO: remove
+        if (mig) fclose( fs );
+
 #else
 	err( 1, "Open files re-opening is supported only for X86_64" );
 #endif

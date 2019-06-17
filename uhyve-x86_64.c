@@ -1098,7 +1098,7 @@ int get_keyvalue_value( char** value, char* line,
     return 0;
 }
 
-int read_fdinfo()
+int fdinfo_from_checkpoint()
 {
     // Reads file descriptors info from checkpoint file. Each fd is
     // represented with 3 lines for absolute path, mode and offset. For
@@ -1193,8 +1193,6 @@ int restore_file_descriptors()
     int rfd;    // restored file descriptor
     int ret = 0;
     fd_entry_t* fdentp; 
-
-    read_fdinfo();
 
     STAILQ_FOREACH( fdentp, fd_tailqp->head, nextfd ) {
         
