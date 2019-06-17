@@ -74,6 +74,7 @@ int attach_linux_tap(const char *dev)
 
 	if (ioctl(fd, TUNSETIFF, (void *)&ifr) < 0) {
 		err = errno;
+	    warnx( "ioctl(TUNSETIFF): %s", strerror(err) );
 		close(fd);
 		errno = err;
 		return -1;
